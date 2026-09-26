@@ -3,12 +3,19 @@ import sys
 # DON'T CHANGE THIS !!!
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
+from dotenv import load_dotenv
 from flask import Flask, send_from_directory
 from flask_cors import CORS
 from src.models.user import db
 from src.routes.user import user_bp
 from src.routes.note import note_bp
+from src.routes.translate import translate_bp
 from src.models.note import Note
+
+ROOT_DIR = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
+
+# Load AI credentials (AI_API_KEY / AI_MODEL) before anything reads them.
+load_dotenv(os.path.join(ROOT_DIR, '.env'))
 
 app = Flask(__name__, static_folder=os.path.join(os.path.dirname(__file__), 'static'))
 app.config['SECRET_KEY'] = 'asdf#FGSgvasgf$5$WGT'
@@ -19,9 +26,11 @@ CORS(app)
 # register blueprints
 app.register_blueprint(user_bp, url_prefix='/api')
 app.register_blueprint(note_bp, url_prefix='/api')
+app.register_blueprint(translate_bp, url_prefix='/api')
 # configure database to use repository-root `database/app.db`
-ROOT_DIR = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
-DB_PATH = os.path.join(ROOT_DIR, 'database', 'app.db')
+DB_PATH = os.environ.get(
+    'DATABASE_PATH', os.path.join(ROOT_DIR, 'database', 'app.db')
+)
 # ensure database directory exists
 os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
 
