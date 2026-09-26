@@ -11,8 +11,12 @@ itsdangerous==2.2.0
 Jinja2==3.1.6
 MarkupSafe==3.0.2
 python-dotenv==1.2.3
+# Driver for the optional hosted database (Neon, Supabase). Only needed when
+# DATABASE_URL points at PostgreSQL; local SQLite runs without it.
+psycopg[binary]==3.3.6
 requests==2.34.2
 SQLAlchemy==2.0.41
 typing_extensions==4.14.0
+tzdata==2026.4
 urllib3==2.8.0
 Werkzeug==3.1.3

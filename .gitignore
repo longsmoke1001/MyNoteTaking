@@ -88,6 +88,8 @@ celerybeat-schedule
 # dotenv
 .env
 .env.*
+# the template is committed, the real secrets never are
+!.env.example
 
 # mypy
 .mypy_cache/

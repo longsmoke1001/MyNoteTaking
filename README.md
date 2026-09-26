@@ -33,7 +33,11 @@ The application is deployed and accessible at: **https://3dhkilc88dkk.manus.spac
 - **python-dotenv**: Loads the AI credentials from `.env`
 
 ### Database
-- **SQLite**: Lightweight, file-based database for data persistence
+- **SQLAlchemy**: ORM, shared by both backends
+- **SQLite** (default): Lightweight, file-based storage for local development
+- **PostgreSQL** (optional): Hosted Neon/Supabase for deployments, enabled by
+  setting `DATABASE_URL`. Requires the `psycopg` driver, already in
+  `requirements.txt`.
 
 ## 📁 Project Structure
 
@@ -246,19 +250,43 @@ The application is configured for easy deployment with:
 
 ### Deploying to Vercel (serverless)
 
-The **translation API works on Vercel as-is**: `GET /api/languages` and
+**Translation needs nothing but an API key.** `GET /api/languages` and
 `POST /api/translate` take everything they need from the request, import no
 database model, and write nothing to disk. Set `AI_API_KEY` and `AI_MODEL` as
 project environment variables instead of relying on `.env`.
 
-Notes are a different story. They are stored in a local SQLite file, and a
-serverless filesystem is read-only and does not persist between invocations, so
-the note CRUD routes cannot work there. The app still starts: a failed database
-setup is logged as a warning rather than raised, which keeps the translation
-endpoints available and simply leaves `/api/notes` returning an error. To get
-working notes on Vercel, point `SQLALCHEMY_DATABASE_URI` at a hosted database
-(Turso, Neon, Supabase) and create the schema once, since `db.create_all()`
-cannot run on every cold start.
+**Notes need a hosted database.** A serverless filesystem is read-only and
+persists nothing between invocations, so the default SQLite file cannot work
+there. Point `DATABASE_URL` at a hosted PostgreSQL database and the same models
+run unchanged.
+
+#### 1. Create the database
+
+- **Neon**: create a project, then copy the **pooled** connection string.
+- **Supabase**: create a project, then copy the connection string from
+  *Project Settings → Database*.
+
+#### 2. Set the environment variables in Vercel
+
+| Variable | Value |
+| --- | --- |
+| `AI_API_KEY` | Your OpenRouter key |
+| `AI_MODEL` | e.g. `nvidia/nemotron-3.5-lightning:free` |
+| `DATABASE_URL` | The pooled connection string |
+
+`postgres://` and `postgresql://` are both accepted, since Neon and Supabase
+still hand out the older spelling.
+
+#### 3. Deploy
+
+The tables are created automatically on first start. That behaviour is
+controlled by `AUTO_CREATE_TABLES`, which defaults to on; set it to `0` when
+the schema is managed by migrations. On a serverless host the connection pool
+is disabled automatically, so a cold start cannot exhaust the provider's
+connection limit.
+
+If the database is unreachable the app still starts and logs a warning instead
+of crashing, so translation keeps working even while the notes routes error.
 
 ## 🔧 Configuration
 
@@ -269,13 +297,15 @@ cannot run on every cold start.
 - `AI_APP_TITLE` / `AI_HTTP_REFERER`: Optional headers sent to the provider
 - `FLASK_ENV`: Set to `development` for debug mode
 - `SECRET_KEY`: Flask secret key for sessions
+- `DATABASE_URL`: Hosted PostgreSQL connection string (Neon, Supabase). Unset by default, which uses local SQLite. `SQLALCHEMY_DATABASE_URI` is accepted as an alias.
 - `DATABASE_PATH`: Override the SQLite file location (defaults to `database/app.db`)
-- `SQLALCHEMY_DATABASE_URI`: Use a hosted database instead of local SQLite (needed for notes on Vercel)
+- `AUTO_CREATE_TABLES`: Set to `0` to skip table creation on startup
 
 ### Database Configuration
-- Database file: `src/database/app.db`
-- Automatic table creation on first run
-- SQLAlchemy ORM for database operations
+- Backend selection and connection handling live in `src/database.py`
+- Local SQLite file: `database/app.db`
+- Hosted PostgreSQL: used automatically when `DATABASE_URL` is set
+- Table creation is automatic and idempotent, and can be disabled with `AUTO_CREATE_TABLES=0`
 
 ## 📱 Browser Compatibility
 

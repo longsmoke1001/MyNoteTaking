@@ -6,6 +6,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from dotenv import load_dotenv
 from flask import Flask, send_from_directory
 from flask_cors import CORS
+from src import database as database_config
 from src.models.user import db
 from src.routes.user import user_bp
 from src.routes.note import note_bp
@@ -14,7 +15,8 @@ from src.models.note import Note
 
 ROOT_DIR = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
 
-# Load AI credentials (AI_API_KEY / AI_MODEL) before anything reads them.
+# Load AI credentials (AI_API_KEY / AI_MODEL) and any DATABASE_URL before
+# anything reads them.
 load_dotenv(os.path.join(ROOT_DIR, '.env'))
 
 app = Flask(__name__, static_folder=os.path.join(os.path.dirname(__file__), 'static'))
@@ -27,35 +29,32 @@ CORS(app)
 app.register_blueprint(user_bp, url_prefix='/api')
 app.register_blueprint(note_bp, url_prefix='/api')
 app.register_blueprint(translate_bp, url_prefix='/api')
-# Configure the database to use repository-root `database/app.db`.
+# Notes and users live in a local SQLite file by default, or in a hosted
+# PostgreSQL database (Neon, Supabase) when DATABASE_URL is set. A serverless
+# host such as Vercel needs the hosted option, because its filesystem is
+# read-only and nothing persists between invocations.
 #
-# Notes live in a local SQLite file, which a serverless host such as Vercel
-# cannot offer: the filesystem is read-only and nothing persists between
-# invocations. Translation never touches any of this, so the database is set up
-# on a best-effort basis and a failure is logged instead of raised. That keeps
-# the app importable on Vercel, where the translation API works normally and
-# only the note CRUD routes are unavailable.
-#
-# Set SQLALCHEMY_DATABASE_URI to a hosted database to get working notes on such a
-# host; it takes precedence over the local SQLite file.
-DB_PATH = os.environ.get(
-    'DATABASE_PATH', os.path.join(ROOT_DIR, 'database', 'app.db')
-)
-DATABASE_URI = os.environ.get('SQLALCHEMY_DATABASE_URI') or f"sqlite:///{DB_PATH}"
-app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URI
+# The database is set up on a best-effort basis and a failure is logged rather
+# than raised. That keeps the app importable everywhere, so the translation API
+# still works even where no database can be reached.
+DB = database_config.resolve(ROOT_DIR)
+app.config['SQLALCHEMY_DATABASE_URI'] = DB['uri']
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['SQLALCHEMY_ENGINE_OPTIONS'] = database_config.engine_options(DB)
 db.init_app(app)
 
 try:
-    if DATABASE_URI.startswith('sqlite'):
+    if DB['needs_directory']:
         # only a local SQLite file needs its directory created first
-        os.makedirs(os.path.dirname(DB_PATH) or '.', exist_ok=True)
-    with app.app_context():
-        db.create_all()
+        db_path = database_config.sqlite_path(DB)
+        os.makedirs(os.path.dirname(db_path) or '.', exist_ok=True)
+    if DB['auto_create']:
+        with app.app_context():
+            db.create_all()
 except Exception as exc:  # noqa: BLE001 - never block startup on storage
     app.logger.warning(
-        'Database %s is unavailable (%s). Note routes will not work, but '
-        'translation does not need a database.', DATABASE_URI, exc
+        'Database is unavailable (%s: %s). Note routes will not work, but '
+        'translation does not need a database.', DB['scheme'], exc
     )
 
 @app.route('/', defaults={'path': ''})
