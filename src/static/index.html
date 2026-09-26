@@ -580,6 +580,9 @@
                 document.getElementById('targetLang').addEventListener('change', (e) => {
                     localStorage.setItem('notetaker.targetLang', e.target.value);
                     this.hideTranslation();
+                    // Picking a language is what makes the button usable, so the
+                    // state has to be recomputed here.
+                    this.setTranslationBusy(this.isTranslating);
                 });
 
                 // Auto-save on content change (debounced)
@@ -618,13 +621,18 @@
                     const stillValid = this.languages.some(lang => lang.code === saved);
                     select.value = stillValid ? saved : '';
 
-                    if (!this.translationConfigured) {
-                        select.disabled = true;
-                        select.title = 'Add AI_API_KEY to your .env file to enable translation';
-                    }
+                    // Set the disabled state here too: if AI_API_KEY is missing
+                    // the controls must be locked, otherwise the button needs
+                    // its initial state derived rather than left as markup.
+                    this.translationConfigured
+                        ? (select.title = '')
+                        : (select.title = 'Add AI_API_KEY to your .env file to enable translation');
+                    this.setTranslationBusy(this.isTranslating);
                 } catch (error) {
                     select.innerHTML = '<option value="">Unavailable</option>';
                     select.disabled = true;
+                    this.translationConfigured = false;
+                    this.setTranslationBusy(this.isTranslating);
                 }
             }
 
@@ -637,9 +645,26 @@
                 this.isTranslating = isBusy;
                 const button = document.getElementById('translateBtn');
                 const select = document.getElementById('targetLang');
-                button.disabled = isBusy || !this.currentNote || !select.value || !this.translationConfigured;
+
+                // The button stays clickable once a note is open, even with no
+                // language chosen yet: clicking it explains what is missing
+                // instead of leaving a dead control on screen.
+                const hasNote = !!this.currentNote;
+                button.disabled = isBusy || !hasNote || !this.translationConfigured;
                 button.textContent = isBusy ? '⏳ Translating...' : '🌐 Translate';
                 select.disabled = isBusy || !this.translationConfigured;
+
+                if (isBusy) {
+                    button.title = 'Translating...';
+                } else if (!this.translationConfigured) {
+                    button.title = 'Add AI_API_KEY to your .env file to enable translation';
+                } else if (!hasNote) {
+                    button.title = 'Open a note to translate';
+                } else if (!select.value) {
+                    button.title = 'Choose a language first';
+                } else {
+                    button.title = `Translate this note into ${this.languageName(select.value)}`;
+                }
             }
 
             async translateCurrentNote() {
