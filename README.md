@@ -103,7 +103,7 @@ root. That file is git-ignored, so your key stays out of version control.
 
 ```bash
 AI_API_KEY=sk-or-v1-...
-AI_MODEL=qwen/qwen3.8-27b:free
+AI_MODEL=nvidia/nemotron-3.5-lightning:free
 ```
 
 Pick any model that is available to your account. The UI picks up the setting on
@@ -146,9 +146,10 @@ translator, so it never touches the network or your real notes.
 - `GET /api/notes/search?q=<query>` - Search notes
 
 ### Translation API
+These endpoints never touch the database, so they run unchanged on a serverless
+host such as Vercel where no writable storage is available.
 - `GET /api/languages` - Supported languages, active model and setup status
-- `POST /api/translate` - Translate a snippet of text
-- `POST /api/notes/<id>/translate` - Translate a whole note (preview only, never saved)
+- `POST /api/translate` - Translate a title and body sent in the request (preview only, never saved)
 
 ### Translation Request/Response Format
 A note's title and body are translated in a **single request**, so a rate limited
@@ -166,7 +167,7 @@ model only has to answer once. `title` is optional.
   "translated_text": "Despliegue el viernes.",
   "source_lang": "auto",
   "target_lang": "es",
-  "model": "qwen/qwen3.8-27b:free"
+  "model": "nvidia/nemotron-3.5-lightning:free"
 }
 ```
 
@@ -243,16 +244,33 @@ The application is configured for easy deployment with:
 - Production-ready Flask configuration
 - Persistent SQLite database
 
+### Deploying to Vercel (serverless)
+
+The **translation API works on Vercel as-is**: `GET /api/languages` and
+`POST /api/translate` take everything they need from the request, import no
+database model, and write nothing to disk. Set `AI_API_KEY` and `AI_MODEL` as
+project environment variables instead of relying on `.env`.
+
+Notes are a different story. They are stored in a local SQLite file, and a
+serverless filesystem is read-only and does not persist between invocations, so
+the note CRUD routes cannot work there. The app still starts: a failed database
+setup is logged as a warning rather than raised, which keeps the translation
+endpoints available and simply leaves `/api/notes` returning an error. To get
+working notes on Vercel, point `SQLALCHEMY_DATABASE_URI` at a hosted database
+(Turso, Neon, Supabase) and create the schema once, since `db.create_all()`
+cannot run on every cold start.
+
 ## 🔧 Configuration
 
 ### Environment Variables
 - `AI_API_KEY`: API key for the translation service (required for translation)
-- `AI_MODEL`: Model id to translate with, for example `qwen/qwen3.8-27b:free`
+- `AI_MODEL`: Model id to translate with, for example `nvidia/nemotron-3.5-lightning:free`
 - `AI_BASE_URL`: Override the API base URL (defaults to `https://openrouter.ai/api/v1`)
 - `AI_APP_TITLE` / `AI_HTTP_REFERER`: Optional headers sent to the provider
 - `FLASK_ENV`: Set to `development` for debug mode
 - `SECRET_KEY`: Flask secret key for sessions
 - `DATABASE_PATH`: Override the SQLite file location (defaults to `database/app.db`)
+- `SQLALCHEMY_DATABASE_URI`: Use a hosted database instead of local SQLite (needed for notes on Vercel)
 
 ### Database Configuration
 - Database file: `src/database/app.db`

@@ -27,18 +27,36 @@ CORS(app)
 app.register_blueprint(user_bp, url_prefix='/api')
 app.register_blueprint(note_bp, url_prefix='/api')
 app.register_blueprint(translate_bp, url_prefix='/api')
-# configure database to use repository-root `database/app.db`
+# Configure the database to use repository-root `database/app.db`.
+#
+# Notes live in a local SQLite file, which a serverless host such as Vercel
+# cannot offer: the filesystem is read-only and nothing persists between
+# invocations. Translation never touches any of this, so the database is set up
+# on a best-effort basis and a failure is logged instead of raised. That keeps
+# the app importable on Vercel, where the translation API works normally and
+# only the note CRUD routes are unavailable.
+#
+# Set SQLALCHEMY_DATABASE_URI to a hosted database to get working notes on such a
+# host; it takes precedence over the local SQLite file.
 DB_PATH = os.environ.get(
     'DATABASE_PATH', os.path.join(ROOT_DIR, 'database', 'app.db')
 )
-# ensure database directory exists
-os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-
-app.config['SQLALCHEMY_DATABASE_URI'] = f"sqlite:///{DB_PATH}"
+DATABASE_URI = os.environ.get('SQLALCHEMY_DATABASE_URI') or f"sqlite:///{DB_PATH}"
+app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URI
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db.init_app(app)
-with app.app_context():
-    db.create_all()
+
+try:
+    if DATABASE_URI.startswith('sqlite'):
+        # only a local SQLite file needs its directory created first
+        os.makedirs(os.path.dirname(DB_PATH) or '.', exist_ok=True)
+    with app.app_context():
+        db.create_all()
+except Exception as exc:  # noqa: BLE001 - never block startup on storage
+    app.logger.warning(
+        'Database %s is unavailable (%s). Note routes will not work, but '
+        'translation does not need a database.', DATABASE_URI, exc
+    )
 
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')

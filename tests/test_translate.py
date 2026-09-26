@@ -136,35 +136,56 @@ def test_translate_reports_missing_configuration(client, monkeypatch):
     assert response.get_json()['code'] == 'not_configured'
 
 
-# --- /api/notes/<id>/translate ---------------------------------------------
+# --- the translation API stays database free -------------------------------
 
 
-def test_translate_note(client, mock_translator, note):
-    response = client.post(f'/api/notes/{note}/translate', json={'target_lang': 'de'})
+def test_translate_note_id_route_is_gone():
+    """Translation takes text in the body, so nothing loads a note by id."""
+    rules = {str(rule) for rule in app.url_map.iter_rules()}
+
+    assert not any(rule.endswith('/translate') and 'notes' in rule for rule in rules)
+    assert '/api/translate' in rules
+
+
+def test_translation_module_does_not_import_a_database():
+    """The translation path must stay importable without any database driver."""
+    import src.routes.translate as translate_route
+
+    source_modules = {translate_route, translator_service}
+
+    for module in source_modules:
+        loaded = vars(module)
+        assert not any(
+            name in loaded for name in ('Note', 'db', 'sqlalchemy', 'NoteModel')
+        ), f'{module.__name__} still holds a database reference'
+
+
+def test_translate_handles_a_saved_notes_text(client, mock_translator, note):
+    """A note is translated by sending its text, never by fetching it server side."""
+    stored = client.get(f'/api/notes/{note}').get_json()
+
+    response = client.post('/api/translate', json={
+        'title': stored['title'],
+        'text': stored['content'],
+        'target_lang': 'de',
+    })
 
     assert response.status_code == 200
     payload = response.get_json()
-    assert payload['note_id'] == note
-    assert payload['title'] == '[German] Groceries'
-    assert payload['content'] == '[German] Milk\n[German] Eggs\n[German] Bread'
+    assert payload['translated_title'] == '[German] Groceries'
+    assert payload['translated_text'] == '[German] Milk\n[German] Eggs\n[German] Bread'
 
 
-def test_translate_note_never_writes_to_the_database(client, mock_translator, note):
+def test_translate_never_writes_to_the_database(client, mock_translator, note):
     """The whole point of a preview: the stored note must be untouched."""
     before = client.get(f'/api/notes/{note}').get_json()
 
-    client.post(f'/api/notes/{note}/translate', json={'target_lang': 'de'})
+    client.post('/api/translate', json={'text': 'anything', 'target_lang': 'de'})
 
     after = client.get(f'/api/notes/{note}').get_json()
     assert after['title'] == before['title'] == 'Groceries'
     assert after['content'] == before['content'] == 'Milk\nEggs\nBread'
     assert after['updated_at'] == before['updated_at']
-
-
-def test_translate_missing_note_returns_404(client, mock_translator):
-    response = client.post('/api/notes/9999/translate', json={'target_lang': 'de'})
-
-    assert response.status_code == 404
 
 
 # --- chunking --------------------------------------------------------------

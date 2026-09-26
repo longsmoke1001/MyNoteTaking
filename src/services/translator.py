@@ -3,8 +3,12 @@
 Talks to an OpenAI-compatible chat completions endpoint (OpenRouter by default)
 using the credentials in the project `.env` file (`AI_API_KEY` / `AI_MODEL`).
 
-Translating is strictly read-only: nothing in this module writes to the
-database, so a translated note can never overwrite the original.
+This module is deliberately free of any database import. Text goes in and
+translated text comes back, so the whole translation path runs unchanged on a
+stateless serverless host such as Vercel, where no database is available and
+the filesystem is read-only. Translating is strictly read-only as well: nothing
+here can write to a database, so a translated note can never overwrite the
+original.
 """
 import os
 import random
@@ -16,7 +20,7 @@ import requests
 # --- Configuration ---------------------------------------------------------
 
 DEFAULT_BASE_URL = 'https://openrouter.ai/api/v1'
-DEFAULT_MODEL = 'qwen/qwen3.8-27b:free'
+DEFAULT_MODEL = 'nvidia/nemotron-3.5-lightning:free'
 
 # Free tier models are rate limited constantly, so every call is retried with an
 # exponential backoff before giving up.
@@ -300,10 +304,6 @@ class OpenRouterTranslator:
         )
         return _split_marked_output(_clean_output(raw))
 
-    def translate_note(self, note, target_lang, source_lang='auto'):
-        """Return a translated `(title, content)` pair for a Note-like object."""
-        return self.translate_fields(note.title, note.content, target_lang, source_lang)
-
     # -- internals
 
     def _guard_length(self, *texts):
@@ -501,9 +501,6 @@ class MockTranslator:
             self.translate(title, target_lang, source_lang) if title else '',
             self.translate(content, target_lang, source_lang) if content else '',
         )
-
-    def translate_note(self, note, target_lang, source_lang='auto'):
-        return self.translate_fields(note.title, note.content, target_lang, source_lang)
 
 
 # --- Module level access ---------------------------------------------------

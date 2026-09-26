@@ -1,8 +1,11 @@
 from flask import Blueprint, jsonify, request
 
-from src.models.note import Note
 from src.services import translator as translator_service
 
+# This blueprint is deliberately free of any database access. The text to
+# translate arrives in the request body, so every endpoint here works on a
+# stateless serverless filesystem (Vercel) with no writable storage and no
+# database driver loaded.
 translate_bp = Blueprint('translate', __name__)
 
 
@@ -60,29 +63,6 @@ def translate_text():
     return jsonify({
         'translated_title': translated_title,
         'translated_text': translated_text,
-        'source_lang': source,
-        'target_lang': target,
-        'model': translator_service.config_summary()['model'],
-    })
-
-
-@translate_bp.route('/notes/<int:note_id>/translate', methods=['POST'])
-def translate_note(note_id):
-    """Translate a note for preview. Nothing is written to the database."""
-    note = Note.query.get_or_404(note_id)
-    data = _payload()
-    source, target = _requested_languages(data)
-
-    try:
-        translator = translator_service.get_translator()
-        title, content = translator.translate_note(note, target, source)
-    except translator_service.TranslationError as exc:
-        return _error(exc)
-
-    return jsonify({
-        'note_id': note.id,
-        'title': title,
-        'content': content,
         'source_lang': source,
         'target_lang': target,
         'model': translator_service.config_summary()['model'],
