@@ -14,6 +14,7 @@ python-dotenv==1.2.3
 # Driver for the optional hosted database (Neon, Supabase). Only needed when
 # DATABASE_URL points at PostgreSQL; local SQLite runs without it.
 psycopg[binary]==3.3.6
+psycopg2-binary==2.9.9
 requests==2.34.2
 SQLAlchemy==2.0.41
 typing_extensions==4.14.0
